@@ -1,0 +1,95 @@
+_target=arm-none-symbianelf
+pkgname=$_target-gcc
+_pkgver=12.1.0
+pkgver=$_pkgver
+_islver=0.26
+pkgrel=1
+pkgdesc='The GNU Compiler Collection - cross compiler for ARMv5 Symbian ELF target'
+arch=(x86_64 i686)
+url='http://gcc.gnu.org/'
+license=(GPL LGPL FDL)
+depends=($_target-binutils libmpc zlib)
+makedepends=(gmp mpfr)
+options=(!emptydirs !strip)
+source=(https://gcc.gnu.org/pub/gcc/releases/gcc-$_pkgver/gcc-$_pkgver.tar.xz{,.sig}
+        https://libisl.sourceforge.io/isl-$_islver.tar.bz2
+        libgcov-driver.c
+        stdint.h
+        stdio.h)
+validpgpkeys=(D3A93CAD751C2AF4F8C7AD516C35B99309B5FA62)  # Jakub Jelinek <jakub@redhat.com>
+
+if [ -n "$_snapshot" ]; then
+  _basedir=gcc-$_snapshot
+else
+  _basedir=gcc-$_pkgver
+fi
+
+prepare() {
+  cd $_basedir
+
+  # link isl for in-tree builds
+  ln -sf ../isl-$_islver isl
+
+  echo $_pkgver > gcc/BASE-VER
+
+  # hack! - some configure tests for header files using "$CPP $CPPFLAGS"
+  sed -i "/ac_cpp=/s/\$CPPFLAGS/\$CPPFLAGS -O2/" "$srcdir"/$_basedir/{libiberty,gcc}/configure
+
+  cp $srcdir/libgcov-driver.c libgcc/libgcov-driver.c
+
+  mkdir -p $srcdir/gcc-build
+
+  cp $srcdir/stdint.h 'libstdc++-v3/libsupc++/'
+  cp $srcdir/stdio.h 'libstdc++-v3/libsupc++/'
+}
+
+build() {
+  cd gcc-build
+
+  # using -pipe causes spurious test-suite failures
+  # http://gcc.gnu.org/bugzilla/show_bug.cgi?id=48565
+  CFLAGS="${CFLAGS/-pipe/} -Wno-error=format-security"
+  CXXFLAGS="${CXXFLAGS/-pipe/} -Wno-error=format-security"
+
+  $srcdir/$_basedir/configure \
+    --target=$_target \
+    --prefix=/usr \
+    --libexecdir=/usr/lib \
+    --without-headers \
+    --enable-languages="c,c++,lto" \
+    --enable-lto \
+    --enable-interwork \
+    --enable-long-long \
+    --enable-tls \
+    --enable-multilib \
+    --enable-wchar_t \
+    --enable-c99 \
+    --with-newlib \
+    --with-dwarf2 \
+    --with-static-standard-libraries \
+    --disable-hosted-libstdcxx \
+    --disable-libstdcxx-pch \
+    --disable-shared \
+    --disable-option-checking \
+    --disable-threads \
+    --disable-nls \
+    --disable-win32-registry \
+    --disable-libssp \
+    --disable-libquadmath
+
+  make -k ||:
+}
+
+package() {
+  make -k -C gcc-build DESTDIR="$pkgdir" install-strip ||:
+
+  # Remove files that conflict with host gcc package
+  rm -r "$pkgdir/usr/share/"{man/man7,info}
+  rm -r "$pkgdir/usr/lib/libcc1.so"*
+}
+sha256sums=('62fd634889f31c02b64af2c468f064b47ad1ca78411c45abe6ac4b5f8dd19c7b'
+            'SKIP'
+            '5eac8664e9d67be6bd0bee5085d6840b8baf738c06814df47eaf4166d9776436'
+            '3178078259108b36b0789c71a638c2c7ab1348594a768598342b36eeaece7011'
+            '1456147206d28254d03b8e51244fa4c33795f1095c771188995f5a7f79e02848'
+            '968ac4b1dd3d480f066ef97754e971a4c2683e9fde8d252ee9edae7fa3275a37')
